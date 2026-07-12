@@ -30,6 +30,6 @@ pub fn build(b: *std.Build) void {
 
 ## Supported Platforms
 
-- [x] MasOS
+- [x] MacOS
 - [ ] Windows
 - [ ] Linux (untested)
