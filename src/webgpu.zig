@@ -1368,7 +1368,15 @@ pub const Instance = *opaque {
         options: RequestAdapterOptions,
         callback_info: RequestAdapterCallbackInfo,
     ) Future {
-        return @bitCast(c.wgpuInstanceRequestAdapter(@ptrCast(instance), @ptrCast(&options), @bitCast(callback_info)));
+        const c_callback_info: c.WGPURequestAdapterCallbackInfo = .{
+            .nextInChain = if (callback_info.next_in_chain) |next| @ptrCast(@constCast(next)) else null,
+            .mode = @intFromEnum(callback_info.mode),
+            .callback = if (callback_info.callback) |cb| @ptrCast(cb) else null,
+            .userdata1 = callback_info.userdata_1,
+            .userdata2 = callback_info.userdata_2,
+        };
+        const c_future = c.wgpuInstanceRequestAdapter(@ptrCast(instance), @ptrCast(&options), c_callback_info);
+        return .{ .id = c_future.id };
     }
 
     pub fn waitAny(instance: Instance, futures: []FutureWaitInfo, timeout_ns: u64) WaitStatus {
@@ -1410,7 +1418,15 @@ pub const Adapter = *opaque {
         descriptor: DeviceDescriptor,
         callback_info: RequestDeviceCallbackInfo,
     ) Future {
-        return @bitCast(c.wgpuAdapterRequestDevice(@ptrCast(adapter), @ptrCast(&descriptor), @bitCast(callback_info)));
+        const c_callback_info: c.WGPURequestDeviceCallbackInfo = .{
+            .nextInChain = if (callback_info.next_in_chain) |next| @ptrCast(@constCast(next)) else null,
+            .mode = @intFromEnum(callback_info.mode),
+            .callback = if (callback_info.callback) |cb| @ptrCast(cb) else null,
+            .userdata1 = callback_info.userdata_1,
+            .userdata2 = callback_info.userdata_2,
+        };
+        const c_future = c.wgpuAdapterRequestDevice(@ptrCast(adapter), @ptrCast(&descriptor), c_callback_info);
+        return .{ .id = c_future.id };
     }
 
     pub fn addRef(adapter: Adapter) void {
@@ -1448,11 +1464,19 @@ pub const Device = *opaque {
         descriptor: ComputePipelineDescriptor,
         callback_info: CreateComputePipelineAsyncCallbackInfo,
     ) Future {
-        return @bitCast(c.wgpuDeviceCreateComputePipelineAsync(
+        const c_callback_info: c.WGPUCreateComputePipelineAsyncCallbackInfo = .{
+            .nextInChain = if (callback_info.next_in_chain) |next| @ptrCast(@constCast(next)) else null,
+            .mode = @intFromEnum(callback_info.mode),
+            .callback = if (callback_info.callback) |cb| @ptrCast(cb) else null,
+            .userdata1 = callback_info.userdata_1,
+            .userdata2 = callback_info.userdata_2,
+        };
+        const c_future = c.wgpuDeviceCreateComputePipelineAsync(
             @ptrCast(device),
             @ptrCast(&descriptor),
-            @bitCast(callback_info),
-        ));
+            c_callback_info,
+        );
+        return .{ .id = c_future.id };
     }
 
     pub fn createPipelineLayout(device: Device, descriptor: PipelineLayoutDescriptor) PipelineLayout {
@@ -1479,11 +1503,19 @@ pub const Device = *opaque {
         descriptor: RenderPipelineDescriptor,
         callback_info: CreateRenderPipelineAsyncCallbackInfo,
     ) Future {
-        return @bitCast(c.wgpuDeviceCreateRenderPipelineAsync(
+        const c_callback_info: c.WGPUCreateRenderPipelineAsyncCallbackInfo = .{
+            .nextInChain = if (callback_info.next_in_chain) |next| @ptrCast(@constCast(next)) else null,
+            .mode = @intFromEnum(callback_info.mode),
+            .callback = if (callback_info.callback) |cb| @ptrCast(cb) else null,
+            .userdata1 = callback_info.userdata_1,
+            .userdata2 = callback_info.userdata_2,
+        };
+        const c_future = c.wgpuDeviceCreateRenderPipelineAsync(
             @ptrCast(device),
             @ptrCast(&descriptor),
-            @bitCast(callback_info),
-        ));
+            c_callback_info,
+        );
+        return .{ .id = c_future.id };
     }
 
     pub fn createSampler(device: Device, descriptor: SamplerDescriptor) Sampler {
@@ -1515,7 +1547,15 @@ pub const Device = *opaque {
     }
 
     pub fn popErrorScope(device: Device, callback_info: PopErrorScopeCallbackInfo) Future {
-        return @bitCast(c.wgpuDevicePopErrorScope(@ptrCast(device), @bitCast(callback_info)));
+        const c_callback_info: c.WGPUPopErrorScopeCallbackInfo = .{
+            .nextInChain = if (callback_info.next_in_chain) |next| @ptrCast(@constCast(next)) else null,
+            .mode = @intFromEnum(callback_info.mode),
+            .callback = if (callback_info.callback) |cb| @ptrCast(cb) else null,
+            .userdata1 = callback_info.userdata_1,
+            .userdata2 = callback_info.userdata_2,
+        };
+        const c_future = c.wgpuDevicePopErrorScope(@ptrCast(device), c_callback_info);
+        return .{ .id = c_future.id };
     }
 
     pub fn pushErrorScope(device: Device, filter: ErrorFilter) void {
@@ -1607,7 +1647,15 @@ pub const Buffer = *opaque {
         size: usize,
         callback_info: BufferMapCallbackInfo,
     ) Future {
-        return @bitCast(c.wgpuBufferMapAsync(@ptrCast(buffer), @bitCast(mode), offset, size, @bitCast(callback_info)));
+        const c_callback_info: c.WGPUBufferMapCallbackInfo = .{
+            .nextInChain = if (callback_info.next_in_chain) |next| @ptrCast(@constCast(next)) else null,
+            .mode = @intFromEnum(callback_info.mode),
+            .callback = if (callback_info.callback) |cb| @ptrCast(cb) else null,
+            .userdata1 = callback_info.userdata_1,
+            .userdata2 = callback_info.userdata_2,
+        };
+        const c_future = c.wgpuBufferMapAsync(@ptrCast(buffer), @bitCast(mode), offset, size, c_callback_info);
+        return .{ .id = c_future.id };
     }
 
     pub fn setLabel(buffer: Buffer, label: []const u8) void {
@@ -1939,7 +1987,15 @@ pub const Queue = *opaque {
         queue: Queue,
         callback_info: QueueWorkDoneCallbackInfo,
     ) Future {
-        return @bitCast(c.wgpuQueueOnSubmittedWorkDone(@ptrCast(queue), @bitCast(callback_info)));
+        const c_callback_info: c.WGPUQueueWorkDoneCallbackInfo = .{
+            .nextInChain = if (callback_info.next_in_chain) |next| @ptrCast(@constCast(next)) else null,
+            .mode = @intFromEnum(callback_info.mode),
+            .callback = if (callback_info.callback) |cb| @ptrCast(cb) else null,
+            .userdata1 = callback_info.userdata_1,
+            .userdata2 = callback_info.userdata_2,
+        };
+        const c_future = c.wgpuQueueOnSubmittedWorkDone(@ptrCast(queue), c_callback_info);
+        return .{ .id = c_future.id };
     }
 
     pub fn setLabel(queue: Queue, label: []const u8) void {
