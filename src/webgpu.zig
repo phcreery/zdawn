@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const c = @cImport(@cInclude("webgpu/webgpu.h"));
+pub const c = @import("c");
 pub const slog = std.log.scoped(.wgpu);
 
 pub const True = OptionalBool.true;
@@ -1935,7 +1935,6 @@ pub const QuerySet = *opaque {
 };
 
 pub const Queue = *opaque {
-
     pub fn onSubmittedWorkDone(
         queue: Queue,
         callback_info: QueueWorkDoneCallbackInfo,

@@ -4,18 +4,19 @@ const wgpu_export_symbols = @import("src/webgpu_export_symbols.zig");
 
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
-    // const target = b.standardTargetOptions(.{});
-    // const target = b.standardTargetOptions(.{});
-    // const target: std.Build.ResolvedTarget = .{
-    //     .cpu_arch = .x86_64,
-    //     .os_tag = .windows,
-    //     .abi = .msvc,
-    // };
-    const target = b.resolveTargetQuery(.{
-        .cpu_arch = .x86_64,
-        .os_tag = .windows,
-        .abi = .msvc,
+    const target = b.standardTargetOptions(.{});
+
+    const dawn_headers = b.dependency("dawn_headers", .{});
+
+    const translate_c = b.addTranslateC(.{
+        // .root_source_file = b.path("libs/dawn/include/webgpu/webgpu.h"),
+        .root_source_file = dawn_headers.path("include/webgpu/webgpu.h"),
+        .target = target,
+        .optimize = optimize,
+        .link_libc = true,
     });
+    // translate_c.addIncludePath(b.path("libs/dawn/include"));
+    translate_c.addIncludePath(dawn_headers.path("include"));
 
     // Standalone `webgpu` module: just the hand-written webgpu.h bindings
     // (src/webgpu.zig) + the dawn include path.
@@ -23,19 +24,21 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/webgpu.zig"),
         .target = target,
         .optimize = optimize,
+        .imports = &.{
+            .{ .name = "c", .module = translate_c.createModule() },
+        },
     });
     addDawnPaths(b, webgpu_mod, target.result);
 
     const zdawn = b.addLibrary(.{
         .name = "zdawn",
-        .linkage = .dynamic,
+        // .linkage = .dynamic,
         .use_llvm = true,
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/zdawn.zig"),
             .target = target,
             .optimize = optimize,
             .link_libc = true,
-
         }),
     });
     b.installArtifact(zdawn);
@@ -44,12 +47,6 @@ pub fn build(b: *std.Build) void {
 
     // prebuilt libs from os-specific dependency
     zdawn.root_module.linkSystemLibrary("webgpu_dawn", .{});
-    // Embed /ALTERNATENAME linker directives for CRT init stubs (see comment in crt_stubs.c).
-    if (zdawn.rootModuleTarget().os.tag == .windows and zdawn.rootModuleTarget().abi == .msvc) {
-        zdawn.root_module.addCSourceFile(.{
-            .file = b.path("src/crt_stubs.c"),
-        });
-    }
 
     // When building zdawn as a shared library on macOS, the linker would
     // otherwise only pull the subset of libwebgpu_dawn.a referenced directly
@@ -177,7 +174,7 @@ pub fn addDawnPaths(b: *std.Build, m: *std.Build.Module, target: std.Target) voi
         .linux => {
             if (target.cpu.arch.isX86()) {
                 if (b.lazyDependency("dawn_x86_64_linux_gnu", .{})) |dawn_prebuilt| {
-                    m.addLibraryPath(dawn_prebuilt.path("lib"));
+                    m.addLibraryPath(dawn_prebuilt.path("lib64"));
                     m.addIncludePath(dawn_prebuilt.path("include"));
                 }
             } else if (target.cpu.arch.isAARCH64()) {
@@ -211,41 +208,4 @@ pub fn addDawnPaths(b: *std.Build, m: *std.Build.Module, target: std.Target) voi
 pub fn addLibraryPathsTo(compile_step: *std.Build.Step.Compile) void {
     const b = compile_step.step.owner;
     addDawnPaths(b, compile_step.root_module, compile_step.rootModuleTarget());
-}
-
-pub fn checkTargetSupported(target: std.Target) bool {
-    const supported = switch (target.os.tag) {
-        .windows => target.cpu.arch.isX86(), // and target.abi.isGnu(),
-        .linux => (target.cpu.arch.isX86() or target.cpu.arch.isAARCH64()) and target.abi.isGnu(),
-        .macos => blk: {
-            if (!target.cpu.arch.isX86() and !target.cpu.arch.isAARCH64()) break :blk false;
-
-            // If min. target macOS version is lesser than the min version we have available, then
-            // our Dawn binary is incompatible with the target.
-            if (target.os.version_range.semver.min.order(
-                .{ .major = 12, .minor = 0, .patch = 0 },
-            ) == .lt) break :blk false;
-            break :blk true;
-        },
-        else => false,
-    };
-    if (supported == false) {
-        log.warn("\n" ++
-            \\---------------------------------------------------------------------------
-            \\
-            \\Dawn/WebGPU binary for this target is not available.
-            \\
-            \\Following targets are supported:
-            \\
-            \\x86_64-windows-gnu
-            \\x86_64-linux-gnu
-            \\x86_64-macos.12.0.0-none
-            \\aarch64-linux-gnu
-            \\aarch64-macos.12.0.0-none
-            \\
-            \\---------------------------------------------------------------------------
-            \\
-        , .{});
-    }
-    return supported;
 }
