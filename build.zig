@@ -9,13 +9,11 @@ pub fn build(b: *std.Build) void {
     const dawn_headers = b.dependency("dawn_headers", .{});
 
     const translate_c = b.addTranslateC(.{
-        // .root_source_file = b.path("libs/dawn/include/webgpu/webgpu.h"),
         .root_source_file = dawn_headers.path("include/webgpu/webgpu.h"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
     });
-    // translate_c.addIncludePath(b.path("libs/dawn/include"));
     translate_c.addIncludePath(dawn_headers.path("include"));
 
     // Standalone `webgpu` module: just the hand-written webgpu.h bindings
@@ -24,11 +22,18 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/webgpu.zig"),
         .target = target,
         .optimize = optimize,
+        // .link_libcpp = if (target.result.abi != .msvc) true else false,
         .imports = &.{
             .{ .name = "c", .module = translate_c.createModule() },
         },
     });
     addDawnPaths(b, webgpu_mod, target.result);
+
+    if (target.result.abi != .msvc) {
+        webgpu_mod.linkSystemLibrary("stdc++", .{});
+    } else {
+        webgpu_mod.link_libcpp = true;
+    }
 
     const zdawn = b.addLibrary(.{
         .name = "zdawn",
@@ -39,21 +44,22 @@ pub fn build(b: *std.Build) void {
             .target = target,
             .optimize = optimize,
             .link_libc = true,
+            // .link_libcpp = if (target.result.abi != .msvc) true else false,
         }),
     });
     b.installArtifact(zdawn);
     linkSystemDeps(b, zdawn);
-    addDawnPaths(b, zdawn.root_module, zdawn.rootModuleTarget());
+    // addDawnPathsTo(zdawn);
 
     // prebuilt libs from os-specific dependency
-    zdawn.root_module.linkSystemLibrary("webgpu_dawn", .{});
+    // zdawn.root_module.linkSystemLibrary("webgpu_dawn", .{});
 
     // When building zdawn as a shared library on macOS, the linker would
     // otherwise only pull the subset of libwebgpu_dawn.a referenced directly
     // by zdawn.zig. Force all exported wgpu* entry points out of the static
     // archive so libzdawn.dylib can serve as the single shared Dawn runtime
     // for any downstream libs dynamically linked
-    forceExportAllDawnWebgpuSymbols(b, zdawn, zdawn.rootModuleTarget());
+    // forceExportAllDawnWebgpuSymbols(b, zdawn, zdawn.rootModuleTarget());
 
     // zdawn.root_module.addIncludePath(b.path("src"));
 }
@@ -129,34 +135,9 @@ pub fn linkSystemDeps(b: *std.Build, compile_step: *std.Build.Step.Compile) void
     }
 }
 
-/// Force all exported wgpu* entry points out of the static archive so
-/// libzdawn can serve as the single shared Dawn runtime for downstream
-/// shared libs. On macOS, -u pulls symbols from the archive. On Windows
-/// (msvc), lld-link does NOT auto-export, so we use /INCLUDE: (via
-/// forceUndefinedSymbol) + a .def file to export them from the DLL.
-fn forceExportAllDawnWebgpuSymbols(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Target) void {
-    switch (target.os.tag) {
-        .macos => {
-            for (wgpu_export_symbols.all) |sym| {
-                compile.forceUndefinedSymbol(b.fmt("_{s}", .{sym}));
-            }
-        },
-        .windows => {
-            if (target.abi != .msvc) return;
-            var def_contents: std.ArrayList(u8) = .empty;
-            defer def_contents.deinit(b.allocator);
-            def_contents.appendSlice(b.allocator, "LIBRARY zdawn\nEXPORTS\n") catch @panic("OOM");
-            for (wgpu_export_symbols.all) |sym| {
-                compile.forceUndefinedSymbol(sym);
-                def_contents.appendSlice(b.allocator, sym) catch @panic("OOM");
-                def_contents.append(b.allocator, '\n') catch @panic("OOM");
-            }
-            const def_file = b.addWriteFiles();
-            const def_path = def_file.add("zdawn.def", def_contents.items);
-            compile.root_module.addObjectFile(def_path);
-        },
-        else => {},
-    }
+pub fn addDawnPathsTo(compile_step: *std.Build.Step.Compile) void {
+    const b = compile_step.step.owner;
+    addDawnPaths(b, compile_step.root_module, compile_step.rootModuleTarget());
 }
 
 /// Resolve the os/arch-specific dawn prebuilt dependency for `target` and add
@@ -164,6 +145,11 @@ fn forceExportAllDawnWebgpuSymbols(b: *std.Build, compile: *std.Build.Step.Compi
 /// to `m`. Used by the zgpu `root` module (which @cImports webgpu/webgpu.h)
 /// and the `zdawn`/test artifacts.
 pub fn addDawnPaths(b: *std.Build, m: *std.Build.Module, target: std.Target) void {
+    // pub fn addDawnPaths(compile_step: *std.Build.Step.Compile) void {
+    // const b = compile_step.step.owner;
+    // const target = compile_step.rootModuleTarget();
+    // const m = compile_step.root_module;
+    std.debug.print("addDawnPaths: module={s}\n", .{m.root_source_file.?.src_path.sub_path});
     switch (target.os.tag) {
         .windows => {
             if (b.lazyDependency("dawn_x86_64_windows_msvc", .{})) |dawn_prebuilt| {
@@ -201,11 +187,35 @@ pub fn addDawnPaths(b: *std.Build, m: *std.Build.Module, target: std.Target) voi
         },
         else => {},
     }
+    m.linkSystemLibrary("webgpu_dawn", .{});
 }
 
-/// Backwards-compatible wrapper: adds the dawn lib + include paths to a
-/// `Compile` step's root module.
-pub fn addLibraryPathsTo(compile_step: *std.Build.Step.Compile) void {
-    const b = compile_step.step.owner;
-    addDawnPaths(b, compile_step.root_module, compile_step.rootModuleTarget());
+/// Force all exported wgpu* entry points out of the static archive so
+/// libzdawn can serve as the single shared Dawn runtime for downstream
+/// shared libs. On macOS, -u pulls symbols from the archive. On Windows
+/// (msvc), lld-link does NOT auto-export, so we use /INCLUDE: (via
+/// forceUndefinedSymbol) + a .def file to export them from the DLL.
+fn forceExportAllDawnWebgpuSymbols(b: *std.Build, compile: *std.Build.Step.Compile, target: std.Target) void {
+    switch (target.os.tag) {
+        .macos => {
+            for (wgpu_export_symbols.all) |sym| {
+                compile.forceUndefinedSymbol(b.fmt("_{s}", .{sym}));
+            }
+        },
+        .windows => {
+            if (target.abi != .msvc) return;
+            var def_contents: std.ArrayList(u8) = .empty;
+            defer def_contents.deinit(b.allocator);
+            def_contents.appendSlice(b.allocator, "LIBRARY zdawn\nEXPORTS\n") catch @panic("OOM");
+            for (wgpu_export_symbols.all) |sym| {
+                compile.forceUndefinedSymbol(sym);
+                def_contents.appendSlice(b.allocator, sym) catch @panic("OOM");
+                def_contents.append(b.allocator, '\n') catch @panic("OOM");
+            }
+            const def_file = b.addWriteFiles();
+            const def_path = def_file.add("zdawn.def", def_contents.items);
+            compile.root_module.addObjectFile(def_path);
+        },
+        else => {},
+    }
 }
